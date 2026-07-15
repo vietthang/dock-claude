@@ -22,19 +22,19 @@ const cmd = command(
   flag('--rebuild', 'Rebuild the image before running.'),
   flag(
     '--docker-file <path>',
-    'Dockerfile path passed to docker build. Defaults to the bundled Dockerfile.'
+    'Dockerfile path passed to docker build. Defaults to Dockerfile.dock-claude in the mounted directory, then the packaged Dockerfile.'
   ),
   flag(
     '--docker-context <path>',
-    'Build context passed to docker build. Defaults to the package root.'
+    'Build context passed to docker build. Defaults to the mounted directory.'
   ),
-  flag(
-    '--docker-arg <key=value>',
-    'Build arg passed to docker build. Can be specified multiple times.'
-  ).multiple(),
   flag(
     '--guest-mount <path>',
     'Workspace-relative directory to mask with a guest-only Docker volume. Can be specified multiple times.'
+  ).multiple(),
+  flag(
+    '--mount <host:guest>',
+    'Extra host directory to bind mount into the container. Can be specified multiple times.'
   ).multiple(),
   flag('--version', 'Show package version.'),
   arg('[directory]', 'Directory to mount. Defaults to the current directory.'),
@@ -52,22 +52,20 @@ const cmd = command(
 
     const image = flags.image ?? `dock-claude-${imageNamePart(path.basename(mountDir))}:latest`
     const buildOptions = {
-      dockerFile: path.resolve(flags.dockerFile ?? path.join(packageRoot, 'Dockerfile')),
-      dockerContext: path.resolve(flags.dockerContext ?? packageRoot),
-      buildArgs: flags.dockerArg ?? []
+      dockerFile: await dockerFilePath(flags.dockerFile, mountDir),
+      dockerContext: path.resolve(flags.dockerContext ?? mountDir)
     }
-    // Build args only take effect during a build, so any supplied arg implies a rebuild.
-    const shouldBuild =
-      flags.rebuild || buildOptions.buildArgs.length > 0 || !(await imageExists(image))
+    const shouldBuild = flags.rebuild || !(await imageExists(image))
 
     if (shouldBuild) {
       await buildImage(image, buildOptions)
     }
 
     const guestMounts = defaultGuestMounts.concat(flags.guestMount ?? [])
+    const hostMounts = flags.mount ?? []
     const result = await run(
       'docker',
-      await dockerRunArgs(image, mountDir, guestMounts, cmd.rest ?? [])
+      await dockerRunArgs(image, mountDir, guestMounts, hostMounts, cmd.rest ?? [])
     )
     process.exit(result.status ?? 1)
   }
@@ -86,6 +84,15 @@ function imageNamePart(value) {
   return normalized || 'workspace'
 }
 
+async function dockerFilePath(file, mountDir) {
+  if (file) return path.resolve(file)
+
+  const local = path.join(mountDir, 'Dockerfile.dock-claude')
+  if (await pathExists(local)) return local
+
+  return path.join(packageRoot, 'Dockerfile.dock-claude')
+}
+
 function guestMountTarget(mount) {
   if (typeof mount !== 'string' || mount.length === 0) fail('guest mount path cannot be empty')
   if (path.isAbsolute(mount)) fail(`guest mount must be relative to /workspace: ${mount}`)
@@ -98,10 +105,17 @@ function guestMountTarget(mount) {
   return path.posix.join('/workspace', normalized)
 }
 
-function validateDockerArg(arg) {
-  if (typeof arg !== 'string' || !arg.includes('=') || arg.startsWith('=')) {
-    fail(`docker arg must use KEY=VALUE format: ${arg}`)
+function hostMountVolume(mount) {
+  const separator = mount.indexOf(':')
+  if (separator <= 0 || separator === mount.length - 1) {
+    fail(`mount must use host:guest format: ${mount}`)
   }
+
+  const host = path.resolve(mount.slice(0, separator))
+  const guest = mount.slice(separator + 1)
+  if (!path.posix.isAbsolute(guest)) fail(`mount guest path must be absolute: ${mount}`)
+
+  return `${host}:${guest}`
 }
 
 async function pathExists(target) {
@@ -157,25 +171,15 @@ async function buildImage(image, options) {
     fail(`Docker build context does not exist: ${options.dockerContext}`)
   }
 
-  for (const arg of options.buildArgs) validateDockerArg(arg)
-
   const result = await run(
     'docker',
-    [
-      'build',
-      '-t',
-      image,
-      '-f',
-      options.dockerFile,
-      ...options.buildArgs.flatMap((arg) => ['--build-arg', arg]),
-      options.dockerContext
-    ],
+    ['build', '-t', image, '-f', options.dockerFile, options.dockerContext],
     { cwd: options.dockerContext }
   )
   if (result.status !== 0) fail(`failed to build Docker image ${image}`, result.status ?? 1)
 }
 
-async function dockerRunArgs(image, mountDir, guestMounts, claudeArgs) {
+async function dockerRunArgs(image, mountDir, guestMounts, hostMounts, claudeArgs) {
   const argv = ['run', '--rm']
 
   if (process.stdin.isTTY && process.stdout.isTTY) argv.push('-it')
@@ -192,6 +196,10 @@ async function dockerRunArgs(image, mountDir, guestMounts, claudeArgs) {
     '-e',
     'HOME=/workspace/.dock-claude'
   )
+
+  for (const mount of hostMounts) {
+    argv.push('-v', hostMountVolume(mount))
+  }
 
   // Anonymous volumes hide selected host directories from the bind mount so
   // guest dependencies do not collide with host-installed files.

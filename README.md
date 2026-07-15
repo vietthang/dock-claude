@@ -6,61 +6,40 @@ Run Claude Code inside Docker with a host directory mounted as `/workspace`.
 
 ```sh
 npx dock-claude
-```
-
-By default, the command mounts the current directory. You can pass a directory as
-the first argument:
-
-```sh
 dock-claude ~/src/my-project
-```
-
-Arguments after the directory are passed to `claude`. Pass a directory (use `.`
-for the current one) before any `claude` flags:
-
-```sh
 dock-claude . --dangerously-skip-permissions
 ```
 
-The wrapper builds the local Docker image on first run. By default, the image is
-tagged as `dock-claude-(dirname):latest`, where `(dirname)` is the mounted
-directory basename normalized by replacing non-alphanumeric characters with
-`-`. Use `--rebuild` to force a rebuild or `--image <name>` to choose a
-different image tag.
+Arguments after the directory are passed to `claude`. Use `.` before Claude
+flags when mounting the current directory.
 
-## Image builds
+## Options
 
-Pass build args to `docker build` by repeating `--docker-arg`. This is useful
-with custom Dockerfiles that declare their own `ARG` values:
+- `--image <name>`: Docker image tag. Defaults to
+  `dock-claude-(dirname):latest`.
+- `--rebuild`: rebuild before running.
+- `--docker-file <path>`: Dockerfile for `docker build`. Defaults to
+  `Dockerfile.dock-claude` in the mounted directory, falling back to the
+  packaged Dockerfile.
+- `--docker-context <path>`: build context for `docker build`. Defaults to the
+  mounted directory.
+- `--guest-mount <path>`: repeatable workspace-relative path hidden by a
+  guest-only volume. Defaults to `node_modules`.
+- `--mount <host:guest>`: repeatable extra host bind mount. Relative host paths
+  resolve from the current directory; guest paths must be absolute.
 
-```sh
-dock-claude --docker-file ./Dockerfile.dev --docker-arg FOO=bar --rebuild .
-```
-
-Passing a build arg rebuilds the image so the change takes effect.
-
-Use `--docker-file <path>` and `--docker-context <path>` to build from a custom
-Dockerfile or context. By default, the bundled `Dockerfile` and package root are
-used:
+Examples:
 
 ```sh
 dock-claude --docker-file ./Dockerfile.dev --docker-context . --rebuild .
-```
-
-Run `dock-claude --help` for the full list of options.
-
-The container runs as the current host UID/GID so files created in the mounted
-workspace are owned by the invoking user instead of root.
-
-By default, host `node_modules/` is hidden inside the container with a
-guest-only Docker volume mounted at `/workspace/node_modules`. Add more
-workspace-relative guest-only mounts by repeating `--guest-mount`:
-
-```sh
 dock-claude --guest-mount dist --guest-mount packages/app/node_modules .
+dock-claude --mount ~/.ssh:/workspace/.ssh --mount ../shared:/shared .
 ```
 
-Claude's Docker login state is stored in `.dock-claude/` inside the mounted
-directory. Host Claude config is not mounted.
+## Notes
 
-Anthropic-related host environment variables are not forwarded.
+- The image is built on first run.
+- The container runs as the current host UID/GID.
+- Claude state is stored in `.dock-claude/` inside the mounted directory.
+- Host Claude config and Anthropic-related environment variables are not
+  forwarded.
