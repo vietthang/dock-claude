@@ -26,7 +26,7 @@ const cmd = command(
   ),
   flag(
     '--docker-context <path>',
-    'Build context passed to docker build. Defaults to the mounted directory.'
+    'Build context passed to docker build. Defaults to the Dockerfile directory.'
   ),
   flag(
     '--guest-mount <path>',
@@ -51,9 +51,10 @@ const cmd = command(
     await ensureDocker()
 
     const image = flags.image ?? `dock-claude-${imageNamePart(path.basename(mountDir))}:latest`
+    const dockerFile = await dockerFilePath(flags.dockerFile, mountDir)
     const buildOptions = {
-      dockerFile: await dockerFilePath(flags.dockerFile, mountDir),
-      dockerContext: path.resolve(flags.dockerContext ?? mountDir)
+      dockerFile,
+      dockerContext: path.resolve(flags.dockerContext ?? path.dirname(dockerFile))
     }
     const shouldBuild = flags.rebuild || !(await imageExists(image))
 

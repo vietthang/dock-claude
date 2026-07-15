@@ -22,7 +22,7 @@ flags when mounting the current directory.
   `Dockerfile.dock-claude` in the mounted directory, falling back to the
   packaged Dockerfile.
 - `--docker-context <path>`: build context for `docker build`. Defaults to the
-  mounted directory.
+  Dockerfile directory.
 - `--guest-mount <path>`: repeatable workspace-relative path hidden by a
   guest-only volume. Defaults to `node_modules`.
 - `--mount <host:guest>`: repeatable extra host bind mount. Relative host paths
@@ -34,6 +34,30 @@ Examples:
 dock-claude --docker-file ./Dockerfile.dev --docker-context . --rebuild .
 dock-claude --guest-mount dist --guest-mount packages/app/node_modules .
 dock-claude --mount ~/.ssh:/workspace/.ssh --mount ../shared:/shared .
+```
+
+## Project Setup
+
+For a project-specific image, add `Dockerfile.dock-claude` to the project root:
+
+```dockerfile
+FROM node:26-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates git openssh-client \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g @anthropic-ai/claude-code@2.1.210
+
+WORKDIR /workspace
+
+ENTRYPOINT ["claude"]
+```
+
+Add `.dock-claude` to both `.gitignore` and `.dockerignore`:
+
+```gitignore
+.dock-claude/
 ```
 
 ## Notes
