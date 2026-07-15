@@ -1,0 +1,32 @@
+{
+  "name": "dock-claude",
+  "version": "0.1.0",
+  "description": "Run Claude Code inside Docker with the current directory mounted.",
+  "type": "module",
+  "bin": {
+    "dock-claude": "./bin.mjs"
+  },
+  "files": [
+    "bin.mjs",
+    "Dockerfile",
+    "README.md"
+  ],
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "start": "node ./bin.mjs",
+    "test": "npm run format:check && lunte && node --check ./bin.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "paparam": "^1.10.1"
+  },
+  "devDependencies": {
+    "lunte": "^1.8.4",
+    "prettier": "^3.9.5",
+    "prettier-config-holepunch": "^2.0.0"
+  }
+}
